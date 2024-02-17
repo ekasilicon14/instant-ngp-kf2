@@ -46,6 +46,19 @@ inline size_t depth_type_size(EDepthDataType type) {
 	}
 }
 
+struct LoadedImageInfo {
+	ivec2 res = ivec2(0);
+	bool image_data_on_gpu = false;
+	EImageDataType image_type = EImageDataType::None;
+	bool white_transparent = false;
+	bool black_transparent = false;
+	uint32_t mask_color = 0;
+	void *pixels = nullptr;
+	uint16_t *depth_pixels = nullptr;
+	Ray *rays = nullptr;
+	float depth_scale = -1.f;
+};
+
 struct NerfDataset {
 	bool is_same(const NerfDataset& other) {
 		return xforms == other.xforms && paths == other.paths;
@@ -60,11 +73,13 @@ struct NerfDataset {
 
 	void update_metadata(int first = 0, int last = -1);
 
-	std::vector<TrainingXForm> xforms;
+	std::vector<std::unique_ptr<TrainingXForm>> xforms;
 	std::vector<std::string> paths;
 	GPUMemory<float> sharpness_data;
 	ivec2 sharpness_resolution = {0, 0};
 	GPUMemory<float> envmap_data;
+
+	LoadedImageInfo info = {};
 
 	BoundingBox render_aabb = {};
 	mat3 render_aabb_to_local = mat3::identity();
@@ -75,6 +90,9 @@ struct NerfDataset {
 	float scale = 1.0f;
 	int aabb_scale = 1;
 	bool from_mitsuba = false;
+	bool fix_premult = false;
+	bool enable_ray_loading = true;
+	bool enable_depth_loading = true;
 	bool is_hdr = false;
 	bool wants_importance_sampling = true;
 	bool has_rays = false;
@@ -86,6 +104,7 @@ struct NerfDataset {
 		return (has_light_dirs ? 3u : 0u) + n_extra_learnable_dims;
 	}
 
+	void add_training_image(nlohmann::json frame, uint8_t *img, uint16_t *depth, uint8_t *alpha, uint8_t *mask);
 	void set_training_image(int frame_idx, const ivec2& image_resolution, const void* pixels, const void* depth_pixels, float depth_scale, bool image_data_on_gpu, EImageDataType image_type, EDepthDataType depth_type, float sharpen_amount = 0.f, bool white_transparent = false, bool black_transparent = false, uint32_t mask_color = 0, const Ray *rays = nullptr);
 
 	vec3 nerf_direction_to_ngp(const vec3& nerf_dir) {

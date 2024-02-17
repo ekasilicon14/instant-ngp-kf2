@@ -25,7 +25,7 @@ If you have Windows, download one of the following releases corresponding to you
 
 Keep reading for a guided tour of the application or, if you are interested in creating your own NeRF, watch [the video tutorial](https://www.youtube.com/watch?v=3TWxO1PftMc) or read the [written instructions](docs/nerf_dataset_tips.md).
 
-If you use Linux, or want the [developer Python bindings](https://github.com/NVlabs/instant-ngp#python-bindings), or if your GPU is not listed above (e.g. Hopper, Volta, or Maxwell generations), you need to [build __instant-ngp__ yourself](https://github.com/NVlabs/instant-ngp#building-instant-ngp-windows--linux).
+If you use Linux or if your GPU is not listed above (e.g. Hopper, Volta, or Maxwell generations), you need to [build __instant-ngp__ yourself](https://github.com/NVlabs/instant-ngp#building-instant-ngp-windows--linux).
 
 
 ## Usage
@@ -161,7 +161,6 @@ In VR, you have the following controls.
   - __Windows:__ CUDA 11.5 or higher
   - __Linux:__ CUDA 10.2 or higher
 - __[CMake](https://cmake.org/) v3.21 or higher__.
-- __(optional) [Python](https://www.python.org/) 3.7 or higher__ for interactive bindings. Also, run `pip install -r requirements.txt`.
 - __(optional) [OptiX](https://developer.nvidia.com/optix) 7.6 or higher__ for faster mesh SDF training.
 - __(optional) [Vulkan SDK](https://vulkan.lunarg.com/)__ for DLSS support.
 
@@ -211,18 +210,6 @@ If automatic GPU architecture detection fails, (as can happen if you have multip
 |:----:|:----:|:----:|:----:|:----:|:--------------:|:---------------:|:---:|:---:|
 |   90 |   89 |   86 |   80 |   75 |             70 |              61 |  52 |  37 |
 
-
-## Python bindings
-
-After you have built __instant-ngp__, you can use its Python bindings to conduct controlled experiments in an automated fashion.
-All features from the interactive GUI (and more!) have Python bindings that can be easily instrumented.
-For an example of how the `./instant-ngp` application can be implemented and extended from within Python, see `./scripts/run.py`, which supports a superset of the command line arguments that `./instant-ngp` does.
-
-If you would rather build new models from the hash encoding and fast neural networks, consider [__tiny-cuda-nn__'s PyTorch extension](https://github.com/nvlabs/tiny-cuda-nn#pytorch-extension).
-
-Happy hacking!
-
-
 ## Additional resources
 
 - [Getting started with NVIDIA Instant NeRF blog post](https://developer.nvidia.com/blog/getting-started-with-nvidia-instant-nerfs/)
@@ -242,9 +229,7 @@ __A:__ There could be multiple issues:
 ##
 __Q:__ How can I save the trained model and load it again later?
 
-__A:__ Two options:
-1. Use the GUI's "Snapshot" section.
-2. Use the Python bindings `load_snapshot` / `save_snapshot` (see `scripts/run.py` for example usage).
+__A:__ Use the GUI's "Snapshot" section.
 
 ##
 __Q:__ Can this codebase use multiple GPUs at the same time?
@@ -254,7 +239,7 @@ __A:__ Only for VR rendering, in which case one GPU is used per eye. Otherwise, 
 ##
 __Q:__ How can I run __instant-ngp__ in headless mode?
 
-__A:__ Use `./instant-ngp --no-gui` or `python scripts/run.py`. You can also compile without GUI via `cmake -DNGP_BUILD_WITH_GUI=off ...`
+__A:__ Use `./instant-ngp --no-gui`. You can also compile without GUI via `cmake -DNGP_BUILD_WITH_GUI=off ...`
 
 ##
 __Q:__ Does this codebase run on [Google Colab](https://colab.research.google.com/)?
@@ -314,7 +299,6 @@ If your problem persists, consult the following table of known issues.
 | __Compile error:__ A single input file is required for a non-link phase when an outputfile is specified | Ensure there no spaces in the path to __instant-ngp__. Some build systems seem to have trouble with those. ([#39](https://github.com/NVlabs/instant-ngp/issues/39) [#198](https://github.com/NVlabs/instant-ngp/issues/198)) |
 | __Compile error:__ undefined references to "cudaGraphExecUpdate" / identifier "cublasSetWorkspace" is undefined | Update your CUDA installation (which is likely 11.0) to 11.3 or higher. ([#34](https://github.com/NVlabs/instant-ngp/issues/34) [#41](https://github.com/NVlabs/instant-ngp/issues/41) [#42](https://github.com/NVlabs/instant-ngp/issues/42)) |
 | __Compile error:__ too few arguments in function call | Update submodules with the above two `git` commands. ([#37](https://github.com/NVlabs/instant-ngp/issues/37) [#52](https://github.com/NVlabs/instant-ngp/issues/52)) |
-| __Python error:__ No module named 'pyngp' | It is likely that CMake did not detect your Python installation and therefore did not build `pyngp`. Check CMake logs to verify this. If `pyngp` was built in a different folder than `build`, Python will be unable to detect it and you have to supply the full path to the import statement. ([#43](https://github.com/NVlabs/instant-ngp/issues/43)) |
 
 If you cannot find your problem in the table, try searching [the discussions board](https://github.com/NVlabs/instant-ngp/discussions) and [the issues area](https://github.com/NVlabs/instant-ngp/issues?q=is%3Aissue) for help. If you are still stuck, please [open an issue](https://github.com/NVlabs/instant-ngp/issues/new) and ask for help.
 
@@ -330,7 +314,6 @@ This project makes use of a number of awesome open source libraries, including:
 * [stb_image](https://github.com/nothings/stb) for PNG and JPEG support
 * [Dear ImGui](https://github.com/ocornut/imgui) an excellent immediate mode GUI library
 * [Eigen](https://eigen.tuxfamily.org/index.php?title=Main_Page) a C++ template library for linear algebra
-* [pybind11](https://github.com/pybind/pybind11) for seamless C++ / Python interop
 * and others! See the `dependencies` folder.
 
 Many thanks to the authors of these brilliant projects!

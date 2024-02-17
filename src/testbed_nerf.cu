@@ -2012,8 +2012,8 @@ void Testbed::Nerf::Training::set_camera_extrinsics_rolling_shutter(int frame_id
 		camera_to_world_end = dataset.nerf_matrix_to_ngp(camera_to_world_end);
 	}
 
-	dataset.xforms[frame_idx].start = camera_to_world_start;
-	dataset.xforms[frame_idx].end = camera_to_world_end;
+	dataset.xforms[frame_idx]->start = camera_to_world_start;
+	dataset.xforms[frame_idx]->end = camera_to_world_end;
 	dataset.metadata[frame_idx].rolling_shutter = rolling_shutter;
 	dataset.update_metadata(frame_idx, frame_idx + 1);
 
@@ -2105,7 +2105,7 @@ void Testbed::Nerf::Training::update_transforms(int first, int last) {
 	}
 
 	for (uint32_t i = 0; i < n; ++i) {
-		auto xform = dataset.xforms[i + first];
+		TrainingXForm xform = *(dataset.xforms[i + first]);
 		float det_start = determinant(mat3(xform.start));
 		float det_end = determinant(mat3(xform.end));
 		if (distance(det_start, 1.0f) > 0.01f || distance(det_end, 1.0f) > 0.01f) {
@@ -2114,7 +2114,7 @@ void Testbed::Nerf::Training::update_transforms(int first, int last) {
 
 			xform.start[0] /= std::cbrt(det_start); xform.start[1] /= std::cbrt(det_start); xform.start[2] /= std::cbrt(det_start);
 			xform.end[0]   /= std::cbrt(det_end);   xform.end[1]   /= std::cbrt(det_end);   xform.end[2]   /= std::cbrt(det_end);
-			dataset.xforms[i + first] = xform;
+			*dataset.xforms[i + first] = xform;
 		}
 
 		mat3 rot = rotmat(cam_rot_offset[i + first].variable());

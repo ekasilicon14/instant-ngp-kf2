@@ -166,8 +166,9 @@ NerfDataset create_empty_nerf_dataset(size_t n_images, int aabb_scale, bool is_h
 	result.is_hdr = is_hdr;
 	result.paths = std::vector<std::string>(n_images, "");
 	for (size_t i = 0; i < n_images; ++i) {
-		result.xforms[i].start = mat4x3::identity();
-		result.xforms[i].end = mat4x3::identity();
+		result.xforms[i] = std::make_unique<TrainingXForm>();
+		result.xforms[i]->start = mat4x3::identity();
+		result.xforms[i]->end = mat4x3::identity();
 	}
 	return result;
 }
@@ -284,20 +285,7 @@ NerfDataset load_nerf(const std::vector<fs::path>& jsonpaths, float sharpen_amou
 
 	ThreadPool pool;
 
-	struct LoadedImageInfo {
-		ivec2 res = ivec2(0);
-		bool image_data_on_gpu = false;
-		EImageDataType image_type = EImageDataType::None;
-		bool white_transparent = false;
-		bool black_transparent = false;
-		uint32_t mask_color = 0;
-		void *pixels = nullptr;
-		uint16_t *depth_pixels = nullptr;
-		Ray *rays = nullptr;
-		float depth_scale = -1.f;
-	};
 	std::vector<LoadedImageInfo> images;
-	LoadedImageInfo info = {};
 
 	if (transforms["camera"].is_array()) {
 		throw std::runtime_error{"hdf5 is no longer supported. please use the hdf52nerf.py conversion script"};
@@ -414,9 +402,9 @@ NerfDataset load_nerf(const std::vector<fs::path>& jsonpaths, float sharpen_amou
 	auto progress = tlog::progress(result.n_images);
 
 	result.from_mitsuba = false;
-	bool fix_premult = false;
-	bool enable_ray_loading = true;
-	bool enable_depth_loading = true;
+	result.fix_premult = false;
+	result.enable_ray_loading = true;
+	result.enable_depth_loading = true;
 	std::atomic<int> n_loaded{0};
 	BoundingBox cam_aabb;
 	for (size_t i = 0; i < jsons.size(); ++i) {
@@ -429,12 +417,12 @@ NerfDataset load_nerf(const std::vector<fs::path>& jsonpaths, float sharpen_amou
 		std::string part_after_underscore(jp.begin()+lastunderscore,jp.begin()+lastdot);
 
 		if (json.contains("enable_ray_loading")) {
-			enable_ray_loading = bool(json["enable_ray_loading"]);
-			tlog::info() << "enable_ray_loading=" << enable_ray_loading;
+			result.enable_ray_loading = bool(json["enable_ray_loading"]);
+			tlog::info() << "enable_ray_loading=" << result.enable_ray_loading;
 		}
 		if (json.contains("enable_depth_loading")) {
-			enable_depth_loading = bool(json["enable_depth_loading"]);
-			tlog::info() << "enable_depth_loading is " << enable_depth_loading;
+			result.enable_depth_loading = bool(json["enable_depth_loading"]);
+			tlog::info() << "enable_depth_loading is " << result.enable_depth_loading;
 		}
 
 		if (json.contains("normal_mts_args")) {
@@ -442,7 +430,7 @@ NerfDataset load_nerf(const std::vector<fs::path>& jsonpaths, float sharpen_amou
 		}
 
 		if (json.contains("fix_premult")) {
-			fix_premult = (bool)json["fix_premult"];
+			result.fix_premult = (bool)json["fix_premult"];
 		}
 
 		if (result.from_mitsuba) {
@@ -460,11 +448,11 @@ NerfDataset load_nerf(const std::vector<fs::path>& jsonpaths, float sharpen_amou
 		}
 
 		if (json.contains("white_transparent")) {
-			info.white_transparent = bool(json["white_transparent"]);
+			result.info.white_transparent = bool(json["white_transparent"]);
 		}
 
 		if (json.contains("black_transparent")) {
-			info.black_transparent = bool(json["black_transparent"]);
+			result.info.black_transparent = bool(json["black_transparent"]);
 		}
 
 		if (json.contains("scale")) {
@@ -484,7 +472,7 @@ NerfDataset load_nerf(const std::vector<fs::path>& jsonpaths, float sharpen_amou
 		vec4 rolling_shutter = vec4(0.0f);
 
 		if (json.contains("integer_depth_scale")) {
-			info.depth_scale = json["integer_depth_scale"];
+			result.info.depth_scale = json["integer_depth_scale"];
 		}
 
 		// Lens parameters
@@ -543,11 +531,14 @@ NerfDataset load_nerf(const std::vector<fs::path>& jsonpaths, float sharpen_amou
 		}
 
 
-		if (json.contains("frames") && json["frames"].is_array()) pool.parallel_for_async<size_t>(0, json["frames"].size(), [&progress, &n_loaded, &result, &images, &json, &resolve_path, &supported_image_formats, base_path, image_idx, info, rolling_shutter, principal_point, lens, part_after_underscore, fix_premult, enable_depth_loading, enable_ray_loading](size_t i) {
+		if (json.contains("frames") && json["frames"].is_array()) 
+		pool.parallel_for_async<size_t>(0, json["frames"].size(), 
+		[&progress, &n_loaded, &result, &images, &json, &resolve_path, &supported_image_formats, base_path, image_idx, rolling_shutter, principal_point, lens, part_after_underscore](size_t i)
+		{
 			size_t i_img = i + image_idx;
 			auto& frame = json["frames"][i];
 			LoadedImageInfo& dst = images[i_img];
-			dst = info; // copy defaults
+			dst = result.info; // copy defaults
 
 			std::string json_provided_path = frame["file_path"];
 			if (json_provided_path == "") {
@@ -563,7 +554,7 @@ NerfDataset load_nerf(const std::vector<fs::path>& jsonpaths, float sharpen_amou
 
 			int comp = 0;
 			if (equals_case_insensitive(path.extension(), "exr")) {
-				dst.pixels = load_exr_to_gpu(&dst.res.x, &dst.res.y, path.str().c_str(), fix_premult);
+				dst.pixels = load_exr_to_gpu(&dst.res.x, &dst.res.y, path.str().c_str(), result.fix_premult);
 				dst.image_type = EImageDataType::Half;
 				dst.image_data_on_gpu = true;
 				result.is_hdr = true;
@@ -622,7 +613,7 @@ NerfDataset load_nerf(const std::vector<fs::path>& jsonpaths, float sharpen_amou
 				throw std::runtime_error{fmt::format("Could not load image file '{}'.", path.str())};
 			}
 
-			if (enable_depth_loading && info.depth_scale > 0.f && frame.contains("depth_path")) {
+			if (result.enable_depth_loading && result.info.depth_scale > 0.f && frame.contains("depth_path")) {
 				fs::path depthpath = resolve_path(base_path, frame["depth_path"]);
 				if (depthpath.exists()) {
 					int wa = 0, ha = 0;
@@ -638,7 +629,7 @@ NerfDataset load_nerf(const std::vector<fs::path>& jsonpaths, float sharpen_amou
 			}
 
 			fs::path rayspath = path.parent_path() / fmt::format("rays_{}.dat", path.basename());
-			if (enable_ray_loading && rayspath.exists()) {
+			if (result.enable_ray_loading && rayspath.exists()) {
 				uint32_t n_pixels = product(dst.res);
 				dst.rays = (Ray*)malloc(n_pixels * sizeof(Ray));
 
@@ -681,10 +672,11 @@ NerfDataset load_nerf(const std::vector<fs::path>& jsonpaths, float sharpen_amou
 				throw std::runtime_error{"Couldn't read fov."};
 			}
 
+			result.xforms[i_img] = std::make_unique<TrainingXForm>();
 			for (int m = 0; m < 3; ++m) {
 				for (int n = 0; n < 4; ++n) {
-					result.xforms[i_img].start[n][m] = float(jsonmatrix_start[m][n]);
-					result.xforms[i_img].end[n][m] = float(jsonmatrix_end[m][n]);
+					result.xforms[i_img]->start[n][m] = float(jsonmatrix_start[m][n]);
+					result.xforms[i_img]->end[n][m] = float(jsonmatrix_end[m][n]);
 				}
 			}
 
@@ -695,8 +687,8 @@ NerfDataset load_nerf(const std::vector<fs::path>& jsonpaths, float sharpen_amou
 			// see if there is a per-frame override
 			read_lens(frame, result.metadata[i_img].lens, result.metadata[i_img].principal_point, result.metadata[i_img].rolling_shutter);
 
-			result.xforms[i_img].start = result.nerf_matrix_to_ngp(result.xforms[i_img].start);
-			result.xforms[i_img].end = result.nerf_matrix_to_ngp(result.xforms[i_img].end);
+			result.xforms[i_img]->start = result.nerf_matrix_to_ngp(result.xforms[i_img]->start);
+			result.xforms[i_img]->end = result.nerf_matrix_to_ngp(result.xforms[i_img]->end);
 
 			progress.update(++n_loaded);
 		}, futures);

@@ -682,7 +682,7 @@ void Testbed::imgui() {
 				fov(),
 				m_aperture_size,
 				m_bounding_radius,
-				!m_nerf.training.dataset.xforms.empty() ? m_nerf.training.dataset.xforms[0].start : mat4x3::identity(),
+				!m_nerf.training.dataset.xforms.empty() ? m_nerf.training.dataset.xforms[0]->start : mat4x3::identity(),
 				m_nerf.glow_mode,
 				m_nerf.glow_y_cutoff
 			)) {
@@ -1753,8 +1753,8 @@ void Testbed::visualize_nerf_cameras(ImDrawList* list, const mat4& world2proj) {
 		auto res = m_nerf.training.dataset.metadata[i].resolution;
 		float aspect = float(res.x)/float(res.y);
 		auto current_xform = get_xform_given_rolling_shutter(m_nerf.training.transforms[i], m_nerf.training.dataset.metadata[i].rolling_shutter, vec2{0.5f, 0.5f}, 0.0f);
-		visualize_nerf_camera(list, world2proj, m_nerf.training.dataset.xforms[i].start, aspect, 0x40ffff40);
-		visualize_nerf_camera(list, world2proj, m_nerf.training.dataset.xforms[i].end, aspect, 0x40ffff40);
+		visualize_nerf_camera(list, world2proj, m_nerf.training.dataset.xforms[i]->start, aspect, 0x40ffff40);
+		visualize_nerf_camera(list, world2proj, m_nerf.training.dataset.xforms[i]->end, aspect, 0x40ffff40);
 		visualize_nerf_camera(list, world2proj, current_xform, aspect, 0x80ffffff);
 
 		// Visualize near distance
