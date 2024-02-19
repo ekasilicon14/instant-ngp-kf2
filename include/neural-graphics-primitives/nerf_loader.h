@@ -94,8 +94,13 @@ struct NerfDataset {
 	bool enable_ray_loading = true;
 	bool enable_depth_loading = true;
 	bool is_hdr = false;
+	float sharpen_amount;
 	bool wants_importance_sampling = true;
 	bool has_rays = false;
+
+	Lens lens;
+	vec2 principal_point;
+	vec4 rolling_shutter;
 
 	uint32_t n_extra_learnable_dims = 0;
 	bool has_light_dirs = false;
@@ -154,6 +159,47 @@ struct NerfDataset {
 		result[1] *= scale_columns ? -1.f/scale : -1.f;
 		result[2] *= scale_columns ? -1.f/scale : -1.f;
 		result[3] = (result[3] - offset) / scale;
+		return result;
+	}
+
+	mat4x3 OneD_TMat_to_ngp(const std::vector<float> &mat_array) {
+		assert(mat_array.size() == 12);
+
+		mat4x3 result = mat4x3::identity();
+
+		for (int m = 0; m < 3; ++m) {
+			for (int n = 0; n < 4; ++n) {
+				if(n==3) result[n][m] = mat_array[n+m*4]*scale + offset[m];
+				else result[n][m] = mat_array[n+m*4];
+			}
+		}
+		return result;
+	}
+
+	std::vector<float> ngp_to_OneD_TMat(const mat4x3& nerf_matrix) {
+		std::vector<float>  result(12,0.0f);
+
+		for (int m = 0; m < 3; ++m) {
+			for (int n = 0; n < 4; ++n) {
+				if(n==3) result[n+m*4] = (nerf_matrix[n][m] - offset[m])/scale;
+				result[n+m*4] = nerf_matrix[n][m];
+			}
+		}
+
+		return result;
+	}
+
+	mat4x3 openGL_matrix_to_ngp(const mat4x3& nerf_matrix) const {
+		mat4x3 result = nerf_matrix;
+		result[3] = result[3] * scale + offset;
+
+		return result;
+	}
+
+	vec3 openGL_point_to_ngp(const vec3& map_point) {
+		vec3 result = map_point;
+
+		result = result * scale + offset;
 		return result;
 	}
 

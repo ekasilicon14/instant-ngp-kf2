@@ -170,6 +170,13 @@ NerfDataset create_empty_nerf_dataset(size_t n_images, int aabb_scale, bool is_h
 		result.xforms[i]->start = mat4x3::identity();
 		result.xforms[i]->end = mat4x3::identity();
 	}
+
+	float myNum[12] = {1,2,3,4,5,6,7,8,9,10,11,12};
+	mat4x3 test = mat4x3(myNum);
+	for(int i=0; i < 12; i++){
+		printf("test: %f \n", test[0][0]);
+	}
+
 	return result;
 }
 
@@ -405,6 +412,8 @@ NerfDataset load_nerf(const std::vector<fs::path>& jsonpaths, float sharpen_amou
 	result.fix_premult = false;
 	result.enable_ray_loading = true;
 	result.enable_depth_loading = true;
+	result.sharpen_amount = sharpen_amount;
+
 	std::atomic<int> n_loaded{0};
 	BoundingBox cam_aabb;
 	for (size_t i = 0; i < jsons.size(); ++i) {
@@ -444,7 +453,7 @@ NerfDataset load_nerf(const std::vector<fs::path>& jsonpaths, float sharpen_amou
 		}
 
 		if (json.contains("sharpen")) {
-			sharpen_amount = json["sharpen"];
+			result.sharpen_amount = json["sharpen"];
 		}
 
 		if (json.contains("white_transparent")) {
@@ -467,16 +476,16 @@ NerfDataset load_nerf(const std::vector<fs::path>& jsonpaths, float sharpen_amou
 			result.n_extra_learnable_dims = json["n_extra_learnable_dims"];
 		}
 
-		Lens lens = {};
-		vec2 principal_point = vec2(0.5f);
-		vec4 rolling_shutter = vec4(0.0f);
+		result.lens = {};
+		result.principal_point = vec2(0.5f);
+		result.rolling_shutter = vec4(0.0f);
 
 		if (json.contains("integer_depth_scale")) {
 			result.info.depth_scale = json["integer_depth_scale"];
 		}
 
 		// Lens parameters
-		read_lens(json, lens, principal_point, rolling_shutter);
+		read_lens(json, result.lens, result.principal_point, result.rolling_shutter);
 
 		if (json.contains("aabb_scale")) {
 			result.aabb_scale = json["aabb_scale"];
@@ -533,7 +542,7 @@ NerfDataset load_nerf(const std::vector<fs::path>& jsonpaths, float sharpen_amou
 
 		if (json.contains("frames") && json["frames"].is_array()) 
 		pool.parallel_for_async<size_t>(0, json["frames"].size(), 
-		[&progress, &n_loaded, &result, &images, &json, &resolve_path, &supported_image_formats, base_path, image_idx, rolling_shutter, principal_point, lens, part_after_underscore](size_t i)
+		[&progress, &n_loaded, &result, &images, &json, &resolve_path, &supported_image_formats, base_path, image_idx, part_after_underscore](size_t i)
 		{
 			size_t i_img = i + image_idx;
 			auto& frame = json["frames"][i];
@@ -681,9 +690,9 @@ NerfDataset load_nerf(const std::vector<fs::path>& jsonpaths, float sharpen_amou
 			}
 
 			// set these from the base settings
-			result.metadata[i_img].rolling_shutter = rolling_shutter;
-			result.metadata[i_img].principal_point = principal_point;
-			result.metadata[i_img].lens = lens;
+			result.metadata[i_img].rolling_shutter = result.rolling_shutter;
+			result.metadata[i_img].principal_point = result.principal_point;
+			result.metadata[i_img].lens = result.lens;
 			// see if there is a per-frame override
 			read_lens(frame, result.metadata[i_img].lens, result.metadata[i_img].principal_point, result.metadata[i_img].rolling_shutter);
 
@@ -732,6 +741,142 @@ NerfDataset load_nerf(const std::vector<fs::path>& jsonpaths, float sharpen_amou
 		free(images[i].depth_pixels);
 	}
 	return result;
+}
+
+// Only call with ORB-SLAM
+void NerfDataset::add_training_image(nlohmann::json frame, uint8_t *img, uint16_t *depth, uint8_t *alpha, uint8_t *mask)
+{
+	size_t i_img = n_images;
+	n_images += 1;
+
+	std::vector<tcnn::GPUMemory<Ray>> temp_raymemory;
+	std::vector<tcnn::GPUMemory<uint8_t>> temp_pixelmemory;
+	std::vector<tcnn::GPUMemory<float>> temp_depthmemory;
+
+	// Increase storage size
+	xforms.resize(n_images);
+	metadata.resize(n_images);
+	temp_pixelmemory.resize(n_images);
+	temp_depthmemory.resize(n_images);
+	temp_raymemory.resize(n_images);
+
+	for(int i = 0; i < n_images-1; i++) {
+		temp_pixelmemory[i] = std::move(pixelmemory[i]);
+		temp_depthmemory[i] = std::move(depthmemory[i]);
+		temp_raymemory[i]   = std::move(raymemory[i]);
+	}
+	pixelmemory = std::move(temp_pixelmemory);
+	depthmemory = std::move(temp_depthmemory);
+	raymemory   = std::move(temp_raymemory);
+
+
+	if (!frame.contains("h") || !frame.contains("w") ) {
+		throw std::runtime_error{"No height or width information provided"};
+	}
+
+	if (!frame.contains("transform_matrix")) {
+		throw std::runtime_error{"No transform_matrix provided, should be the prior in SLAM"};
+	}
+
+	// All images should have similar info
+	LoadedImageInfo dst;
+	dst = info;
+
+	uint32_t height = frame["h"];
+	uint32_t width  = frame["w"];
+
+	dst.res.x = width;
+	dst.res.y = height;
+	
+	if (img == nullptr) {
+		throw std::runtime_error{"No img provided"};
+	}
+
+	// Get image
+	if (frame.contains("is_hdr")) {
+		throw std::runtime_error{"Slam mode not support hdr yet."};
+	} else {
+		dst.image_data_on_gpu = false;
+		if (alpha) {
+			for (int i=0;i< product(dst.res);++i) {
+				img[i*4+3] = uint8_t(255.0f*srgb_to_linear(alpha[i*4]*(1.f/255.f)));
+			}
+		}
+
+		if (mask) {
+			dst.mask_color = 0x00FF00FF; 
+			for (int i = 0; i < product(dst.res); ++i) {
+				if (mask[i*4] != 0) {
+					*(uint32_t*)&img[i*4] = dst.mask_color;
+				}
+			}
+		}
+
+		dst.pixels = img;
+		dst.image_type = EImageDataType::Byte;
+	}
+
+
+	if (!dst.pixels) {
+		throw std::runtime_error{ "No pixels " };
+	}
+
+	if (enable_depth_loading && info.depth_scale > 0.f && depth) {
+		dst.depth_pixels = depth; 
+		if (!dst.depth_pixels) {
+			throw std::runtime_error{"Could not load depth image"};
+		}
+	}
+
+
+	nlohmann::json& jsonmatrix_start = frame.contains("transform_matrix_start") ? frame["transform_matrix_start"] : frame["transform_matrix"];
+	nlohmann::json& jsonmatrix_end =   frame.contains("transform_matrix_end") ? frame["transform_matrix_end"] : jsonmatrix_start;
+
+	if (frame.contains("driver_parameters")) {
+		vec3 light_dir{
+			frame["driver_parameters"].value("LightX", 0.f),
+			frame["driver_parameters"].value("LightY", 0.f),
+			frame["driver_parameters"].value("LightZ", 0.f)
+		};
+		metadata[i_img].light_dir = nerf_direction_to_ngp(normalize(light_dir));
+		has_light_dirs = true;
+		n_extra_learnable_dims = 0;
+	}
+
+	bool got_fl = read_focal_length(frame, metadata[i_img].focal_length, dst.res);
+	if (!got_fl) {
+		throw std::runtime_error{"Couldn't read fov."};
+	}
+
+	xforms[i_img] = std::make_unique<TrainingXForm>();
+	for (int m = 0; m < 3; ++m) {
+		for (int n = 0; n < 4; ++n) {
+			xforms[i_img]->start[n][m] = float(jsonmatrix_start[m][n]);
+			xforms[i_img]->end[n][m] = float(jsonmatrix_end[m][n]);
+		}
+	}
+
+	// set these from the base settings
+	metadata[i_img].rolling_shutter = rolling_shutter;
+	metadata[i_img].principal_point = principal_point;
+	metadata[i_img].lens = lens;
+	// see if there is a per-frame override
+	read_lens(frame, metadata[i_img].lens, metadata[i_img].principal_point, metadata[i_img].rolling_shutter);
+
+	xforms[i_img]->start = openGL_matrix_to_ngp(xforms[i_img]->start);
+	xforms[i_img]->end = openGL_matrix_to_ngp(xforms[i_img]->end);
+
+	set_training_image(i_img, dst.res, dst.pixels, dst.depth_pixels, dst.depth_scale * this->scale, dst.image_data_on_gpu, dst.image_type, EDepthDataType::UShort, sharpen_amount, dst.white_transparent, dst.black_transparent, dst.mask_color, dst.rays);
+
+	if (dst.image_data_on_gpu) {
+		CUDA_CHECK_THROW(cudaFree(dst.pixels));
+	} else {
+		free(dst.pixels);
+	}
+	free(dst.rays);
+	free(dst.depth_pixels);
+
+	CUDA_CHECK_THROW(cudaDeviceSynchronize());
 }
 
 void NerfDataset::set_training_image(int frame_idx, const ivec2& image_resolution, const void* pixels, const void* depth_pixels, float depth_scale, bool image_data_on_gpu, EImageDataType image_type, EDepthDataType depth_type, float sharpen_amount, bool white_transparent, bool black_transparent, uint32_t mask_color, const Ray *rays) {

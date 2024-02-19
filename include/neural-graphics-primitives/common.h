@@ -135,6 +135,7 @@ enum class ETestbedMode : int {
 	Image,
 	Volume,
 	None,
+	NerfSLAM
 };
 
 enum class EMlpAlgorithm : int {

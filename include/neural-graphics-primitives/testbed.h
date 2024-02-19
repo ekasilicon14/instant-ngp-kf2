@@ -336,6 +336,7 @@ public:
 		bool to_srgb = true,
 		CudaDevice* device = nullptr
 	);
+	
 	void render_frame_main(
 		CudaDevice& device,
 		const mat4x3& camera_matrix0,
@@ -346,6 +347,7 @@ public:
 		const Foveation& foveation,
 		int visualized_dimension
 	);
+
 	void render_frame_epilogue(
 		cudaStream_t stream,
 		const mat4x3& camera_matrix0,
@@ -357,6 +359,10 @@ public:
 		CudaRenderBuffer& render_buffer,
 		bool to_srgb = true
 	);
+
+	void add_sparse_point_cloud(std::vector<std::array<float, 3>>& sparse_map_points_positions, std::vector<std::array<float, 3>>& sparse_ref_map_points_positions);
+	void update_camera(cudaStream_t stream);
+	void add_training_image(nlohmann::json frame, uint8_t *img, uint16_t *depth=nullptr, uint8_t *alpha=nullptr, uint8_t *mask=nullptr);
 	void visualize_nerf_cameras(ImDrawList* list, const mat4& world2proj);
 	fs::path find_network_config(const fs::path& network_config_path);
 	nlohmann::json load_network_config(std::istream& stream, bool is_compressed);
@@ -371,7 +377,9 @@ public:
 	static ELossType string_to_loss_type(const std::string& str);
 	void reset_network(bool clear_density_grid = true);
 	void create_empty_nerf_dataset(size_t n_images, int aabb_scale = 1, bool is_hdr = false);
+	void load_nerfslam(const fs::path& data_path);
 	void load_nerf(const fs::path& data_path);
+	void load_nerfSLAM_post();
 	void load_nerf_post();
 	void load_mesh(const fs::path& data_path);
 	void set_exposure(float exposure) { m_exposure = exposure; }
@@ -383,6 +391,8 @@ public:
 	void mouse_drag();
 	void mouse_wheel();
 	void load_file(const fs::path& path);
+
+	void set_nerf_camera_matrix_from_slam(const mat4x3& cam);
 	void set_nerf_camera_matrix(const mat4x3& cam);
 	vec3 look_at() const;
 	void set_look_at(const vec3& pos);
@@ -401,6 +411,7 @@ public:
 	void reset_camera();
 	bool keyboard_event();
 	void generate_training_samples_sdf(vec3* positions, float* distances, uint32_t n_to_generate, cudaStream_t stream, bool uniform_only);
+	void cull_empty_region(bool clean_visible, cudaStream_t stream);
 	void update_density_grid_nerf(float decay, uint32_t n_uniform_density_grid_samples, uint32_t n_nonuniform_density_grid_samples, cudaStream_t stream);
 	void update_density_grid_mean_and_bitfield(cudaStream_t stream);
 	void mark_density_grid_in_sphere_empty(const vec3& pos, float radius, cudaStream_t stream);
@@ -738,7 +749,15 @@ public:
 		GPUMemory<uint8_t> density_grid_bitfield;
 		uint8_t* get_density_grid_bitfield_mip(uint32_t mip);
 		GPUMemory<float> density_grid_mean;
+		float density_grid_mean_cpu;
 		uint32_t density_grid_ema_step = 0;
+
+		tcnn::GPUMemory<uint8_t> density_grid_sample_ct;
+		tcnn::GPUMemory<float> density_grid_sample_ct_mean;
+		std::vector<vec3> sparse_map_points_positions;
+		std::vector<vec3> sparse_ref_map_points_positions;
+		tcnn::GPUMemory<vec3> sparse_map_points_positions_gpu;
+		tcnn::GPUMemory<vec3> sparse_ref_map_points_positions_gpu;
 
 		uint32_t max_cascade = 0;
 
