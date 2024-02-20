@@ -22,7 +22,6 @@ endif()
 option(NGP_BUILD_EXECUTABLE "Build instant-ngp.exe?" ON)
 option(NGP_BUILD_WITH_GUI "Build with GUI support (requires GLFW and GLEW)?" ON)
 option(NGP_BUILD_WITH_OPTIX "Build with OptiX to enable hardware ray tracing?" ON)
-option(NGP_BUILD_WITH_VULKAN "Build with Vulkan to enable DLSS support?" ON)
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 
@@ -31,6 +30,7 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 ###############################################################################
 
 # Set a default configuration if none was specified
+message(STATUS "NGP CMAKE_BUILD_TYPE " ${CMAKE_BUILD_TYPE})
 if (NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
 	message(STATUS "No release type specified. Setting to 'Release'.")
 	set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build." FORCE)
@@ -69,6 +69,8 @@ set(CMAKE_CUDA_EXTENSIONS OFF)
 set(CUDA_LINK_LIBRARIES_KEYWORD PUBLIC)
 set(CMAKE_CUDA_RUNTIME_LIBRARY Shared)
 
+get_directory_property(NGP_HAS_PARENT PARENT_DIRECTORY)
+
 if (MSVC)
 	list(APPEND CUDA_NVCC_FLAGS "-Xcompiler=/bigobj")
 else()
@@ -92,62 +94,6 @@ add_subdirectory(dependencies/tiny-cuda-nn)
 set(CMAKE_CUDA_ARCHITECTURES ${TCNN_CUDA_ARCHITECTURES})
 
 if (NGP_BUILD_WITH_GUI)
-	find_package(Vulkan)
-	if (Vulkan_FOUND AND NGP_BUILD_WITH_VULKAN)
-		set(NGP_VULKAN ON)
-		list(APPEND NGP_DEFINITIONS -DNGP_VULKAN -DGLFW_INCLUDE_VULKAN)
-		list(APPEND NGP_INCLUDE_DIRECTORIES "${Vulkan_INCLUDE_DIRS}")
-		list(APPEND NGP_LIBRARIES ${Vulkan_LIBRARIES})
-
-		list(APPEND GUI_SOURCES src/dlss.cu)
-
-		# DLSS depends on vulkan, so appears here
-		list(APPEND NGP_INCLUDE_DIRECTORIES "dependencies/dlss/include")
-		if (MSVC)
-			list(APPEND NGP_LINK_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/dlss/lib/Windows_x86_64/x86_64")
-			list(APPEND NGP_LIBRARIES "$<IF:$<CONFIG:Debug>,nvsdk_ngx_d_dbg,nvsdk_ngx_d>")
-		else()
-			list(APPEND NGP_LINK_DIRECTORIES "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/dlss/lib/Linux_x86_64")
-			list(APPEND NGP_LIBRARIES nvsdk_ngx)
-		endif()
-	else()
-		set(NGP_VULKAN OFF)
-		if (NGP_BUILD_WITH_VULKAN)
-			message(WARNING
-				"Vulkan was not found. Instant neural graphics primitives will still "
-				"compile and run correctly, but DLSS will not be supported."
-			)
-		endif()
-	endif()
-
-	# OpenXR
-	if (WIN32)
-		list(APPEND NGP_DEFINITIONS -DXR_USE_PLATFORM_WIN32 -DGLFW_EXPOSE_NATIVE_WGL)
-	elseif (UNIX AND NOT APPLE)
-		list(APPEND NGP_DEFINITIONS -DGLFW_EXPOSE_NATIVE_GLX)
-		if (JK_USE_WAYLAND)
-			set(PRESENTATION_BACKEND wayland CACHE STRING " " FORCE)
-			set(BUILD_WITH_XLIB_HEADERS OFF CACHE BOOL " " FORCE)
-			set(BUILD_WITH_XCB_HEADERS OFF CACHE BOOL " " FORCE)
-			set(BUILD_WITH_WAYLAND_HEADERS ON CACHE BOOL " " FORCE)
-			list(APPEND NGP_DEFINITIONS -DGLFW_EXPOSE_NATIVE_WAYLAND -DXR_USE_PLATFORM_WAYLAND)
-		else()
-			set(PRESENTATION_BACKEND xlib CACHE STRING " " FORCE)
-			set(BUILD_WITH_XLIB_HEADERS ON CACHE BOOL " " FORCE)
-			set(BUILD_WITH_XCB_HEADERS OFF CACHE BOOL " " FORCE)
-			set(BUILD_WITH_WAYLAND_HEADERS OFF CACHE BOOL " " FORCE)
-			list(APPEND NGP_DEFINITIONS -DGLFW_EXPOSE_NATIVE_X11 -DXR_USE_PLATFORM_XLIB)
-		endif()
-	else()
-		message(FATAL_ERROR "No OpenXR platform set for this OS")
-	endif()
-
-	add_subdirectory(dependencies/OpenXR-SDK)
-
-	list(APPEND NGP_INCLUDE_DIRECTORIES "dependencies/OpenXR-SDK/include" "dependencies/OpenXR-SDK/src/common")
-	list(APPEND NGP_LIBRARIES openxr_loader)
-	list(APPEND GUI_SOURCES src/openxr_hmd.cu)
-
 	# OpenGL
 	find_package(OpenGL REQUIRED)
 
@@ -158,7 +104,6 @@ if (NGP_BUILD_WITH_GUI)
 	set(GLFW_BUILD_INSTALL OFF CACHE BOOL " " FORCE)
 	set(GLFW_INSTALL OFF CACHE BOOL " " FORCE)
 	set(GLFW_USE_CHDIR OFF CACHE BOOL " " FORCE)
-	set(GLFW_VULKAN_STATIC OFF CACHE BOOL " " FORCE)
 	set(BUILD_SHARED_LIBS ON CACHE BOOL " " FORCE)
 
 	add_subdirectory(dependencies/glfw)
@@ -168,7 +113,7 @@ if (NGP_BUILD_WITH_GUI)
 	mark_as_advanced(
 		GLFW_BUILD_DOCS GLFW_BUILD_EXAMPLES GLFW_BUILD_INSTALL GLFW_BUILD_TESTS
 		GLFW_DOCUMENT_INTERNALS GLFW_INSTALL GLFW_USE_CHDIR GLFW_USE_MENUBAR
-		GLFW_USE_OSMESA GLFW_VULKAN_STATIC GLFW_USE_RETINA GLFW_USE_MIR
+		GLFW_USE_OSMESA GLFW_USE_RETINA GLFW_USE_MIR
 		BUILD_SHARED_LIBS USE_MSVC_RUNTIME_LIBRARY_DLL
 	)
 
@@ -318,25 +263,24 @@ if (NGP_OPTIX)
 	list(APPEND NGP_SOURCES ${OPTIX_PTX_HEADER})
 endif()
 
+message(STATUS "NGP Targeting GPU architectures: ${CMAKE_CUDA_ARCHITECTURES}")
+
+# This is very important -> Passed from tiny-cuda-nn
+# Without this will cause stange assert failed in tiny-cuda-nn/common.h
+# static_assert(__CUDA_ARCH__ >= MIN_GPU_ARCH * 10, "MIN_GPU_ARCH=" STR(TCNN_MIN_GPU_ARCH) "0 must bound __CUDA_ARCH__=" STR(__CUDA_ARCH__) " from below, but doesn't.");
+
+if (NGP_HAS_PARENT)
+	set(CMAKE_CUDA_ARCHITECTURES ${CMAKE_CUDA_ARCHITECTURES} PARENT_SCOPE)
+endif()
+
 add_library(ngp STATIC ${NGP_SOURCES})
+
 set_target_properties(ngp PROPERTIES CUDA_RESOLVE_DEVICE_SYMBOLS ON CUDA_SEPARABLE_COMPILATION ON)
 target_compile_definitions(ngp PUBLIC ${NGP_DEFINITIONS})
 target_compile_options(ngp PUBLIC $<$<COMPILE_LANGUAGE:CUDA>:${CUDA_NVCC_FLAGS}>)
 target_include_directories(ngp PUBLIC ${NGP_INCLUDE_DIRECTORIES})
 target_link_directories(ngp PUBLIC ${NGP_LINK_DIRECTORIES})
 target_link_libraries(ngp PUBLIC ${NGP_LIBRARIES} tiny-cuda-nn)
-
-# Copy shared libraries to the binary directory as needed
-if (NGP_VULKAN)
-	set(NGX_BUILD_DIR "$<IF:$<CONFIG:Debug>,dev,rel>")
-	if (MSVC)
-		set(NGX_SHARED_LIB "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/dlss/lib/Windows_x86_64/${NGX_BUILD_DIR}/nvngx_dlss.dll")
-	else()
-		set(NGX_SHARED_LIB "${CMAKE_CURRENT_SOURCE_DIR}/dependencies/dlss/lib/Linux_x86_64/${NGX_BUILD_DIR}/libnvidia-ngx-dlss.so.*")
-	endif()
-
-	add_custom_command(TARGET ngp POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy "${NGX_SHARED_LIB}" "${CMAKE_CURRENT_BINARY_DIR}" COMMAND_EXPAND_LISTS)
-endif()
 
 if (MSVC)
 	file(GLOB CUDA_DLLS "${CUDA_COMPILER_BIN}/cudart64*.dll")
@@ -354,17 +298,10 @@ if (NGP_BUILD_EXECUTABLE)
 	if (MSVC)
 		add_custom_command(TARGET instant-ngp POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:instant-ngp> ${CMAKE_CURRENT_SOURCE_DIR})
 		file(GLOB NGP_REQUIRED_DLLS "${CUDA_COMPILER_BIN}/cudart64*.dll")
-		if (NGP_VULKAN)
-			list(APPEND NGP_REQUIRED_DLLS "${NGX_SHARED_LIB}")
-		endif()
 		if (NGP_REQUIRED_DLLS)
 			add_custom_command(TARGET instant-ngp POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy ${NGP_REQUIRED_DLLS} ${CMAKE_CURRENT_SOURCE_DIR} COMMAND_EXPAND_LISTS)
 		endif()
 	else()
 		add_custom_command(TARGET instant-ngp POST_BUILD COMMAND ${CMAKE_COMMAND} -E create_symlink $<TARGET_FILE:instant-ngp> "${NGP_BINARY_FILE}")
-
-		if (NGP_VULKAN)
-			add_custom_command(TARGET instant-ngp POST_BUILD COMMAND "ln" -s -f "${NGX_SHARED_LIB}" "${CMAKE_CURRENT_SOURCE_DIR}/")
-		endif()
 	endif()
 endif(NGP_BUILD_EXECUTABLE)

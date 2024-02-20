@@ -26,19 +26,10 @@
 #include <neural-graphics-primitives/thread_pool.h>
 #include <neural-graphics-primitives/trainable_buffer.cuh>
 
-#ifdef NGP_GUI
-#  include <neural-graphics-primitives/openxr_hmd.h>
-#endif
-
 #include <tiny-cuda-nn/multi_stream.h>
 #include <tiny-cuda-nn/random.h>
 
 #include <json/json.hpp>
-
-#ifdef NGP_PYTHON
-#  include <pybind11/pybind11.h>
-#  include <pybind11/numpy.h>
-#endif
 
 #include <thread>
 
@@ -362,6 +353,7 @@ public:
 
 	void add_sparse_point_cloud(std::vector<std::array<float, 3>>& sparse_map_points_positions, std::vector<std::array<float, 3>>& sparse_ref_map_points_positions);
 	void update_camera(cudaStream_t stream);
+	void add_training_image_post();
 	void add_training_image(nlohmann::json frame, uint8_t *img, uint16_t *depth=nullptr, uint8_t *alpha=nullptr, uint8_t *mask=nullptr);
 	void visualize_nerf_cameras(ImDrawList* list, const mat4& world2proj);
 	fs::path find_network_config(const fs::path& network_config_path);
@@ -461,27 +453,15 @@ public:
 	size_t first_encoder_param();
 	size_t n_encoding_params();
 
-#ifdef NGP_PYTHON
-	pybind11::dict compute_marching_cubes_mesh(ivec3 res3d = ivec3(128), BoundingBox aabb = BoundingBox{vec3(0.0f), vec3(1.0f)}, float thresh=2.5f);
-	pybind11::array_t<float> render_to_cpu(int width, int height, int spp, bool linear, float start_t, float end_t, float fps, float shutter_fraction);
-	pybind11::array_t<float> view(bool linear, size_t view) const;
-	pybind11::array_t<float> screenshot(bool linear, bool front_buffer) const;
-	void override_sdf_training_data(pybind11::array_t<float> points, pybind11::array_t<float> distances);
-#endif
-
 	double calculate_iou(uint32_t n_samples=128*1024*1024, float scale_existing_results_factor=0.0, bool blocking=true, bool force_use_octree = true);
 	void draw_visualizations(ImDrawList* list, const mat4x3& camera_matrix);
 	void train_and_render(bool skip_rendering);
 	fs::path training_data_path() const;
 	void init_window(int resw, int resh, bool hidden = false, bool second_window = false);
 	void destroy_window();
-	void init_vr();
-	void update_vr_performance_settings();
 	void apply_camera_smoothing(float elapsed_ms);
 	bool begin_frame();
 	void handle_user_input();
-	vec3 vr_to_world(const vec3& pos) const;
-	void begin_vr_frame_and_handle_vr_input();
 	void gather_histograms();
 	void draw_gui();
 	bool frame();
@@ -620,11 +600,6 @@ public:
 
 	void create_second_window();
 
-	std::unique_ptr<OpenXRHMD> m_hmd;
-	OpenXRHMD::FrameInfoPtr m_vr_frame_info;
-	bool m_vr_use_depth_reproject = false;
-	bool m_vr_use_hidden_area_mask = true;
-
 	void set_n_views(size_t n_views);
 
 	std::function<bool()> m_keyboard_event_callback;
@@ -736,10 +711,6 @@ public:
 			mat4x3 get_camera_extrinsics(int frame_idx);
 			void update_transforms(int first = 0, int last = -1);
 			void update_extra_dims();
-
-#ifdef NGP_PYTHON
-			void set_image(int frame_idx, pybind11::array_t<float> img, pybind11::array_t<float> depth_img, float depth_scale);
-#endif
 
 			void reset_camera_extrinsics();
 			void export_camera_extrinsics(const fs::path& path, bool export_extrinsics_in_quat_format = true);

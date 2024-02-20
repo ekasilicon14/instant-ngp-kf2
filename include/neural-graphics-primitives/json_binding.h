@@ -116,7 +116,7 @@ inline void to_json(nlohmann::json& j, const NerfDataset& dataset) {
 		j["metadata"].at(i)["principal_point"] = dataset.metadata[i].principal_point;
 		j["metadata"].at(i)["rolling_shutter"] = dataset.metadata[i].rolling_shutter;
 		j["metadata"].at(i)["resolution"] = dataset.metadata[i].resolution;
-		j["xforms"].at(i) = *dataset.xforms[i];
+		j["xforms"].at(i) = dataset.xforms[i];
 	}
 	j["render_aabb"] = dataset.render_aabb;
 	j["render_aabb_to_local"] = dataset.render_aabb_to_local;
@@ -148,7 +148,7 @@ inline void from_json(const nlohmann::json& j, NerfDataset& dataset) {
 		if (j.contains("focal_length")) dataset.metadata[i].focal_length = j.at("focal_length");
 		if (j.contains("image_resolution")) dataset.metadata[i].resolution = j.at("image_resolution");
 
-		*dataset.xforms[i] = j.at("xforms").at(i);
+		dataset.xforms[i] = j.at("xforms").at(i);
 		if (j.contains("focal_lengths")) dataset.metadata[i].focal_length = j.at("focal_lengths").at(i);
 		if (j.contains("metadata")) {
 			auto &ji = j["metadata"].at(i);

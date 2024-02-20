@@ -127,28 +127,6 @@ The button "Add from cam" inserts keyframes from the current perspective.
 Then, you can render a video `.mp4` of your camera path or export the keyframes to a `.json` file.
 There is a bit more information about the GUI [in this post](https://developer.nvidia.com/blog/getting-started-with-nvidia-instant-nerfs/) and [in this video guide to creating your own video](https://www.youtube.com/watch?v=3TWxO1PftMc).
 
-
-### VR controls
-
-To view the neural graphics primitive in VR, first start your VR runtime. This will most likely be either
-- __OculusVR__ if you have an Oculus Rift or Meta Quest (with link cable) headset, and
-- __SteamVR__ if you have another headset.
-- Any OpenXR-compatible runtime will work.
-
-Then, press the __Connect to VR/AR headset__ button in the __instant-ngp__ GUI and put on your headset.
-Before entering VR, we **strongly** recommend that you first finish training (press "Stop training") or load a pre-trained snapshot for maximum performance.
-
-In VR, you have the following controls.
-
-| Control                | Meaning       |
-| :--------------------: | ------------- |
-| Left stick / trackpad  | Move |
-| Right stick / trackpad | Turn camera |
-| Press stick / trackpad | Erase NeRF around the hand |
-| Grab (one-handed)      | Drag neural graphics primitive |
-| Grab (two-handed)      | Rotate and zoom (like pinch-to-zoom on a smartphone) |
-
-
 ## Building instant-ngp (Windows & Linux)
 
 ### Requirements

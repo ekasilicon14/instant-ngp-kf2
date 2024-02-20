@@ -73,7 +73,7 @@ struct NerfDataset {
 
 	void update_metadata(int first = 0, int last = -1);
 
-	std::vector<std::unique_ptr<TrainingXForm>> xforms;
+	std::vector<TrainingXForm> xforms;
 	std::vector<std::string> paths;
 	GPUMemory<float> sharpness_data;
 	ivec2 sharpness_resolution = {0, 0};
